@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Token counter for Claude Code sessions. Reads local JSONL transcripts; sends nothing anywhere.
+
+  ctok                  current project, all sessions
+  ctok -c               current session only (newest transcript)
+  ctok -a               every project
+  ctok --cost           add a USD estimate
+"""
+import json, os, sys, glob, datetime
+
+HOME = os.path.expanduser("~")
+ROOT = os.path.join(HOME, ".claude", "projects")
+
+# $/million tokens — edit to match your plan
+PRICE = {"in": 5.00, "out": 25.00, "cache_w": 6.25, "cache_r": 0.50}
+
+
+def munge(path):
+    return path.replace("/", "-")
+
+
+def totals(fp):
+    t = {"in": 0, "out": 0, "cache_w": 0, "cache_r": 0, "msgs": 0}
+    mtime = os.path.getmtime(fp)
+    with open(fp, errors="ignore") as fh:
+        for line in fh:
+            if '"usage"' not in line:
+                continue
+            try:
+                u = json.loads(line).get("message", {}).get("usage")
+            except Exception:
+                continue
+            if not u:
+                continue
+            t["in"] += u.get("input_tokens", 0)
+            t["out"] += u.get("output_tokens", 0)
+            t["cache_w"] += u.get("cache_creation_input_tokens", 0)
+            t["cache_r"] += u.get("cache_read_input_tokens", 0)
+            t["msgs"] += 1
+    t["mtime"] = mtime
+    return t
+
+
+def cost(t):
+    return (
+        t["in"] / 1e6 * PRICE["in"]
+        + t["out"] / 1e6 * PRICE["out"]
+        + t["cache_w"] / 1e6 * PRICE["cache_w"]
+        + t["cache_r"] / 1e6 * PRICE["cache_r"]
+    )
+
+
+def human(n):
+    for unit, div in (("B", 1e9), ("M", 1e6), ("k", 1e3)):
+        if n >= div:
+            return f"{n/div:.1f}{unit}"
+    return str(n)
+
+
+def png_tokens(b64):
+    """Real dimensions from the PNG IHDR header -> Anthropic's w*h/750."""
+    import base64, struct
+    try:
+        head = base64.b64decode(b64[:64] + "==", validate=False)
+        if head[:8] != b"\x89PNG\r\n\x1a\n":
+            return 0
+        w, h = struct.unpack(">II", head[16:24])
+        return int(w * h / 750)
+    except Exception:
+        return 0
+
+
+def breakdown(fp):
+    """What actually consumed context: tool-result bytes per tool, and images."""
+    tools, results, imgs, img_tok = {}, {}, 0, 0
+    pending = {}
+    with open(fp, errors="ignore") as fh:
+        for line in fh:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            msg = rec.get("message") or {}
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            for b in content:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "tool_use":
+                    n = b.get("name", "?")
+                    tools[n] = tools.get(n, 0) + 1
+                    pending[b.get("id")] = n
+                elif b.get("type") == "tool_result":
+                    n = pending.get(b.get("tool_use_id"), "?")
+                    c = b.get("content")
+                    blocks = c if isinstance(c, list) else [{"type": "text", "text": str(c)}]
+                    for blk in blocks:
+                        if not isinstance(blk, dict):
+                            continue
+                        if blk.get("type") == "image":
+                            imgs += 1
+                            b64 = (blk.get("source") or {}).get("data", "")
+                            img_tok += png_tokens(b64)
+                            results[n] = results.get(n, 0) + len(b64)
+                        else:
+                            results[n] = results.get(n, 0) + len(blk.get("text", "") or "")
+    return tools, results, imgs, img_tok
+
+
+def show_breakdown(files):
+    tools, results, imgs, img_tok = {}, {}, 0, 0
+    for f in files:
+        t, r, i, it = breakdown(f)
+        for k, v in t.items():
+            tools[k] = tools.get(k, 0) + v
+        for k, v in r.items():
+            results[k] = results.get(k, 0) + v
+        imgs += i
+        img_tok += it
+    print(f"\n{'tool':<22} {'calls':>6} {'result bytes':>13} {'~tokens':>9}")
+    rows = sorted(results.items(), key=lambda kv: -kv[1])
+    for name, by in rows:
+        print(f"{name:<22} {tools.get(name,0):>6} {human(by):>13} {human(int(by/3.6)):>9}")
+    print(f"\nimages embedded: {imgs}   ~{human(img_tok)} tokens")
+    print("(a 720x1280 screenshot is ~1.2k tokens; halving the dimensions quarters that)")
+
+
+def main():
+    args = sys.argv[1:]
+    show_cost = "--cost" in args
+    scope_all = "-a" in args
+    current_only = "-c" in args
+    want_breakdown = "--breakdown" in args or "-b" in args
+
+    if scope_all:
+        files = glob.glob(os.path.join(ROOT, "*", "*.jsonl"))
+    else:
+        d = os.path.join(ROOT, munge(os.getcwd()))
+        files = glob.glob(os.path.join(d, "*.jsonl"))
+        if not files:
+            print(f"no transcripts for {os.getcwd()}")
+            return
+    if current_only and files:
+        files = [max(files, key=os.path.getmtime)]
+
+    rows = sorted(((f, totals(f)) for f in files), key=lambda r: r[1]["mtime"])
+    grand = {k: 0 for k in ("in", "out", "cache_w", "cache_r", "msgs")}
+
+    print(f"{'session':<14} {'when':<11} {'msgs':>5} {'in':>7} {'out':>7} {'cache_w':>8} {'cache_r':>8}"
+          + (f" {'~$':>7}" if show_cost else ""))
+    for f, t in rows:
+        for k in grand:
+            grand[k] += t[k]
+        when = datetime.datetime.fromtimestamp(t["mtime"]).strftime("%m-%d %H:%M")
+        line = (f"{os.path.basename(f)[:12]:<14} {when:<11} {t['msgs']:>5} "
+                f"{human(t['in']):>7} {human(t['out']):>7} {human(t['cache_w']):>8} {human(t['cache_r']):>8}")
+        if show_cost:
+            line += f" {cost(t):>7.2f}"
+        print(line)
+
+    print("-" * (62 + (8 if show_cost else 0)))
+    line = (f"{'TOTAL':<14} {'':<11} {grand['msgs']:>5} "
+            f"{human(grand['in']):>7} {human(grand['out']):>7} "
+            f"{human(grand['cache_w']):>8} {human(grand['cache_r']):>8}")
+    if show_cost:
+        line += f" {cost(grand):>7.2f}"
+    print(line)
+    billed = grand["in"] + grand["out"] + grand["cache_w"] + grand["cache_r"]
+    print(f"billed units: {human(billed)}   (cache reads are the cheap bulk)")
+
+    if want_breakdown:
+        show_breakdown(files)
+
+
+if __name__ == "__main__":
+    main()

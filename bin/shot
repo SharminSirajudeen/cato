@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Cheap screenshots for agent use. Image tokens scale with pixel area (~w*h/750),
+# so halving each dimension quarters the cost. Crop beats scaling when you know the region.
+#
+#   shot out.png                 # device screenshot, downscaled 50% (~4x cheaper)
+#   shot out.png 35              # scale to 35% (~8x cheaper)
+#   shot out.png 100 0,900,720,380   # full scale, cropped to x,y,w,h
+#
+# Env: SHOT_SERIAL=emulator-5554 to pick a device.
+set -euo pipefail
+
+OUT="${1:?usage: shot <out.png> [scale%] [x,y,w,h]}"
+SCALE="${2:-50}"
+CROP="${3:-}"
+ADB="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
+[ -x "$ADB" ] || ADB=adb
+SER=()
+[ -n "${SHOT_SERIAL:-}" ] && SER=(-s "$SHOT_SERIAL")
+
+"$ADB" "${SER[@]}" exec-out screencap -p > "$OUT"
+
+W=$(sips -g pixelWidth "$OUT" | awk '/pixelWidth/{print $2}')
+H=$(sips -g pixelHeight "$OUT" | awk '/pixelHeight/{print $2}')
+
+if [ -n "$CROP" ]; then
+  IFS=, read -r CX CY CW CH <<< "$CROP"
+  sips -c "$CH" "$CW" --cropOffset "$CY" "$CX" "$OUT" >/dev/null
+  W=$CW; H=$CH
+fi
+
+if [ "$SCALE" != "100" ]; then
+  NW=$(( W * SCALE / 100 ))
+  sips -Z "$NW" "$OUT" >/dev/null
+  W=$(sips -g pixelWidth "$OUT" | awk '/pixelWidth/{print $2}')
+  H=$(sips -g pixelHeight "$OUT" | awk '/pixelHeight/{print $2}')
+fi
+
+echo "$OUT  ${W}x${H}  ~$(( W * H / 750 )) tokens"

@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Compact token segment for the Claude Code status line.
+
+Reads the session transcript incrementally (byte-offset cache), so cost is
+O(new bytes) per render, not O(whole transcript). Prints e.g.  1.3M out · ~$375
+
+stdin: the status-line JSON Claude Code provides (needs .transcript_path).
+"""
+import json, os, sys, hashlib
+
+PRICE = {"in": 5.00, "out": 25.00, "cw": 6.25, "cr": 0.50}  # $/M — edit for your plan
+CACHE = "/tmp/.ctok-status"
+
+
+def human(n):
+    for u, d in (("B", 1e9), ("M", 1e6), ("k", 1e3)):
+        if n >= d:
+            return f"{n/d:.1f}{u}"
+    return str(n)
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return
+    tp = data.get("transcript_path") or ""
+    if not tp or not os.path.exists(tp):
+        return
+
+    os.makedirs(CACHE, exist_ok=True)
+    key = hashlib.md5(tp.encode()).hexdigest()[:12]
+    cf = os.path.join(CACHE, key + ".json")
+
+    st = {"off": 0, "in": 0, "out": 0, "cw": 0, "cr": 0}
+    if os.path.exists(cf):
+        try:
+            st.update(json.load(open(cf)))
+        except Exception:
+            pass
+
+    size = os.path.getsize(tp)
+    if size < st["off"]:          # transcript replaced/truncated
+        st = {"off": 0, "in": 0, "out": 0, "cw": 0, "cr": 0}
+
+    if size > st["off"]:
+        with open(tp, "rb") as fh:
+            fh.seek(st["off"])
+            chunk = fh.read()
+        st["off"] = size
+        for line in chunk.split(b"\n"):
+            if b'"usage"' not in line:
+                continue
+            try:
+                u = json.loads(line).get("message", {}).get("usage")
+            except Exception:
+                continue
+            if not u:
+                continue
+            st["in"] += u.get("input_tokens", 0)
+            st["out"] += u.get("output_tokens", 0)
+            st["cw"] += u.get("cache_creation_input_tokens", 0)
+            st["cr"] += u.get("cache_read_input_tokens", 0)
+        try:
+            json.dump(st, open(cf, "w"))
+        except Exception:
+            pass
+
+    # Prefer the CLI's authoritative session cost; fall back to the local
+    # PRICE estimate only if the JSON doesn't carry total_cost_usd.
+    real = data.get("cost", {}).get("total_cost_usd")
+    if isinstance(real, (int, float)):
+        c = f"${real:,.2f}" if real < 100 else f"${real:,.0f}"
+    else:
+        est = (st["in"] * PRICE["in"] + st["out"] * PRICE["out"]
+               + st["cw"] * PRICE["cw"] + st["cr"] * PRICE["cr"]) / 1e6
+        c = f"~${est:,.0f}"
+    sys.stdout.write(f"{human(st['out'])} out · {c}")
+
+
+if __name__ == "__main__":
+    main()
