@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Token counter for Claude Code sessions. Reads local JSONL transcripts; sends nothing anywhere.
+"""cato — the censor for your agent's spending.
 
-  ctok                  current project, all sessions
-  ctok -c               current session only (newest transcript)
-  ctok -a               every project
-  ctok --cost           add a USD estimate
+Reads local JSONL transcripts. Sends nothing anywhere.
+
+  cato                  current project, all sessions
+  cato -c               current session only (newest transcript)
+  cato -a               every project
+  cato --cost           add a USD estimate
 """
 import json, os, sys, glob, datetime
 
@@ -123,7 +125,8 @@ def show_breakdown(files):
     for name, by in rows:
         print(f"{name:<22} {tools.get(name,0):>6} {human(by):>13} {human(int(by/3.6)):>9}")
     print(f"\nimages embedded: {imgs}   ~{human(img_tok)} tokens")
-    print("(a 720x1280 screenshot is ~1.2k tokens; halving the dimensions quarters that)")
+    if rows:
+        print(f"\nCeterum censeo {rows[0][0]} esse delendam.")
 
 
 def main():

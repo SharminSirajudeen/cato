@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Symlink tokenscope tools into ~/bin (or $TOKENSCOPE_BIN).
+# Symlink cato tools into ~/bin (or $CATO_BIN).
 set -euo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/bin"
-DEST="${TOKENSCOPE_BIN:-$HOME/bin}"
+DEST="${CATO_BIN:-$HOME/bin}"
 mkdir -p "$DEST"
-for f in ctok ctok-status shot; do
+for f in cato cato-status imago; do
   ln -sf "$SRC/$f" "$DEST/$f"
   echo "  linked $DEST/$f"
 done
@@ -13,4 +13,4 @@ case ":$PATH:" in
   *) echo; echo "  note: $DEST is not on your PATH — add:"; echo "    export PATH=\"\$PATH:$DEST\"" ;;
 esac
 echo
-echo "try:  ctok -c -b"
+echo "try:  cato -c -b"

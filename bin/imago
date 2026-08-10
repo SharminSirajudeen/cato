@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
-# Cheap screenshots for agent use. Image tokens scale with pixel area (~w*h/750),
+# imago — Romans kept portrait masks of their ancestors; you keep screenshots.
+# Cheap ones. Image tokens scale with pixel area, so fewer pixels = less coin. Image tokens scale with pixel area (~w*h/750),
 # so halving each dimension quarters the cost. Crop beats scaling when you know the region.
 #
-#   shot out.png                 # device screenshot, downscaled 50% (~4x cheaper)
-#   shot out.png 35              # scale to 35% (~8x cheaper)
-#   shot out.png 100 0,900,720,380   # full scale, cropped to x,y,w,h
+#   imago out.png                 # device screenshot, downscaled 50% (~4x cheaper)
+#   imago out.png 35              # scale to 35% (~8x cheaper)
+#   imago out.png 100 0,900,720,380   # full scale, cropped to x,y,w,h
 #
-# Env: SHOT_SERIAL=emulator-5554 to pick a device.
+# Env: IMAGO_SERIAL=emulator-5554 to pick a device.
 set -euo pipefail
 
-OUT="${1:?usage: shot <out.png> [scale%] [x,y,w,h]}"
+OUT="${1:?usage: imago <out.png> [scale%] [x,y,w,h]}"
 SCALE="${2:-50}"
 CROP="${3:-}"
 ADB="${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb"
 [ -x "$ADB" ] || ADB=adb
 SER=()
-[ -n "${SHOT_SERIAL:-}" ] && SER=(-s "$SHOT_SERIAL")
+[ -n "${IMAGO_SERIAL:-}" ] && SER=(-s "$IMAGO_SERIAL")
 
 "$ADB" "${SER[@]}" exec-out screencap -p > "$OUT"
 

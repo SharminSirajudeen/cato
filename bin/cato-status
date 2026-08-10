@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compact token segment for the Claude Code status line.
+"""cato-status — the censor, condensed to one line.
 
 Reads the session transcript incrementally (byte-offset cache), so cost is
 O(new bytes) per render, not O(whole transcript). Prints e.g.  1.3M out · ~$375
@@ -9,7 +9,7 @@ stdin: the status-line JSON Claude Code provides (needs .transcript_path).
 import json, os, sys, hashlib
 
 PRICE = {"in": 5.00, "out": 25.00, "cw": 6.25, "cr": 0.50}  # $/M — edit for your plan
-CACHE = "/tmp/.ctok-status"
+CACHE = "/tmp/.cato-status"
 
 
 def human(n):
