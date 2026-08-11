@@ -118,19 +118,29 @@ header for true dimensions.)
 
 ## Install
 
-```bash
-git clone https://github.com/SharminSirajudeen/cato
-cd cato && ./install.sh
-```
-
-Python 3, stdlib only. `imago` also uses `adb` and `sips` (macOS built-in).
-
-Uninstall — Cato would approve of the thoroughness:
+There is nothing to install. Take the file you want.
 
 ```bash
-rm ~/bin/{cato,cato-status,imago} && rm -rf /tmp/.cato-status
-# then drop the statusLine key from ~/.claude/settings.json
+mkdir -p ~/bin
+curl -sL https://raw.githubusercontent.com/SharminSirajudeen/cato/master/bin/cato -o ~/bin/cato
+chmod +x ~/bin/cato
 ```
+
+Each tool is one self-contained file — Python 3 stdlib, no dependencies, no package
+manager, no build step, no installer. Take `cato-status` and `imago` the same way, or
+don't; they're optional.
+
+`cato-status` is the only one needing a second step, because Claude Code has to be told
+it exists:
+
+```json
+{ "statusLine": { "type": "command", "command": "$HOME/bin/cato-status" } }
+```
+
+`imago` additionally uses `adb` and `sips` (macOS built-in).
+
+To uninstall, delete the file. Cato would consider a dedicated uninstaller an
+extravagance.
 
 ## What the numbers taught us
 
